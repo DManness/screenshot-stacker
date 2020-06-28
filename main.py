@@ -13,7 +13,7 @@ import tempfile
 
 THUMBNAIL_SIZE = 32
 CONFIG_FILE_PATH = 'config.ini'
-
+STR_FILE_DIALOG_FILTER = 'Images (*.jpg *.jpeg *.jfif *.png *.tiff *tif *.bmp *.gif );;All Files (*)'
 
 class ImageSorterModel(QtCore.QAbstractListModel):
     def __init__(self, parent=None):
@@ -44,10 +44,16 @@ class ImageSorterModel(QtCore.QAbstractListModel):
         self.imageCount += 1
         self.layoutChanged.emit()
 
-    def move_up(self, item):
+    def move_up(self, position):
         self.layoutAboutToBeChanged.emit()
-        self.imageList.index(item)
-        self.changePersistentIndexList()
+        self._swap_elements(position, position-1)
+        #self.changePersistentIndexList(position-1, position)
+        self.layoutChanged.emit()
+
+    def move_down(self, position):
+        self.layoutAboutToBeChanged.emit()
+        self._swap_elements(position ,position+1 )
+        #self.changePersistentIndexList(position-1, position)
         self.layoutChanged.emit()
 
     def insertRows(self, position, rows, index=QtCore.QModelIndex()):
@@ -69,6 +75,10 @@ class ImageSorterModel(QtCore.QAbstractListModel):
         return True
         pass
 
+    def _swap_elements(self, i_1, i_2):
+        temp = self.imageList[i_1]
+        self.imageList[i_1] = self.imageList[i_2]
+        self.imageList[i_2] = temp
 
 class ImageThumbItem(object):
 
@@ -167,24 +177,14 @@ def create_composite_image(image_array, orientation='vertical', alignment='left'
     return out_image
 
 
-
-
 class MainWindow(QtWidgets.QMainWindow):
-
     def __init__(self, parent=None, flags=Qt.WindowFlags()):
         super(MainWindow, self).__init__(parent, flags)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.model = ImageSorterModel(self)
-        test = self._open_image(r'sample.png')
-        i_to_a = []
-        if test is not None:
-            i_to_a.append(test)
-        self.i_to_a = i_to_a
         self.ui.btn_preview.clicked.connect(self.btn_preview_clicked)
         self.ui.btn_export.clicked.connect(self.btn_export_clicked)
-        for i in i_to_a:
-            self.model.add_item(i)
         self.ui.lst_file_list.setModel(self.model)
         self.ui.lst_file_list.setViewMode(QtWidgets.QListView.ViewMode.ListMode)
 
@@ -194,24 +194,42 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.btn_img_move_down.clicked.connect(self.btn_img_move_down_clicked)
         self.ui.btn_save_as_browse.clicked.connect(self.btn_save_as_browse_clicked)
 
+        self.ui.opt_orientation_horizontal.toggled.connect(self.opt_orientation_check_changed)
+        beeper = ['sample.png']
+        for b in beeper:
+            self.model.add_item(create_thumb_item(b, THUMBNAIL_SIZE))
+
+    def opt_orientation_check_changed(self):
+        if self.ui.opt_orientation_horizontal.isChecked():
+            self.ui.opt_align_left.setText(self.tr('Top'))
+            self.ui.opt_align_center.setText(self.tr('Middle'))
+            self.ui.opt_align_center.setText(self.tr('Middle'))
+            self.ui.opt_align_center.setText(self.tr('Middle'))
+            self.ui.opt_align_right.setText(self.tr('Bottom'))
+        else:
+            self.ui.opt_align_left.setText(self.tr('Left'))
+            self.ui.opt_align_center.setText(self.tr('Center'))
+            self.ui.opt_align_right.setText(self.tr('Right'))
+
     def btn_save_as_browse_clicked(self):
         open_dialog = QtWidgets.QFileDialog(self, "Save Image")
         open_dialog.setAcceptMode(open_dialog.AcceptSave)
         open_dialog.setFileMode(open_dialog.AnyFile)
         open_dialog.setConfirmOverwrite(False)
-        open_dialog.setNameFilter("Images (*.png *.jpg *.jpeg *.tiff *tif *.bmp *.gif );;All Files (*)")
+        open_dialog.setNameFilter(self.tr(STR_FILE_DIALOG_FILTER))
         open_dialog.open()
         if open_dialog.exec_():
             file_name = open_dialog.selectedFiles()[0] if open_dialog.selectedFiles() is not None else ""
             self.ui.txt_save_as_path.setText(file_name)
 
     def btn_img_add_clicked(self):
-        open_dialog = QtWidgets.QFileDialog(self, "Open Image")
+        open_dialog = QtWidgets.QFileDialog(self, self.tr("Open Image"))
         open_dialog.setFileMode(open_dialog.ExistingFiles)
-        open_dialog.setNameFilter("Images (*.png *.jpg *.jpeg *.tiff *tif *.bmp *.gif );;All Files (*)")
+        open_dialog.setNameFilter(self.tr(STR_FILE_DIALOG_FILTER))
         open_dialog.open()
         if open_dialog.exec_():
             file_names = open_dialog.selectedFiles()
+            print(file_names)
             for f in file_names:
                 img = self._open_image(f)
                 if img is not None:
@@ -219,12 +237,29 @@ class MainWindow(QtWidgets.QMainWindow):
         pass
 
     def btn_img_remove_clicked(self):
-        pass
+        if self.model.rowCount() > 0:
+            cur_index = self.ui.lst_file_list.currentIndex
+            self.model.removeRows(cur_index.row(), 1)
 
     def btn_img_move_up_clicked(self):
+        if self.model.rowCount() > 0:
+            cur_index = self.ui.lst_file_list.currentIndex()
+            if cur_index.row() > 0:
+                self.model.move_up(cur_index.row())
+                new_index = self.model.createIndex(cur_index.row() - 1, cur_index.row())
+                self.ui.lst_file_list.setCurrentIndex(new_index)
+
+
         pass
 
     def btn_img_move_down_clicked(self):
+        if self.model.rowCount() > 0:
+            cur_index = self.ui.lst_file_list.currentIndex()
+            if cur_index.row() < self.model.rowCount() - 1:
+                self.model.move_down(cur_index.row())
+                new_index = self.model.createIndex(cur_index.row() + 1, cur_index.row())
+                self.ui.lst_file_list.setCurrentIndex(new_index)
+
         pass
 
     def _open_image(self, image):
