@@ -20,7 +20,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
-        MainWindow.resize(960, 540)
+        MainWindow.resize(636, 402)
         MainWindow.setMinimumSize(QSize(636, 402))
         self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName(u"centralwidget")
@@ -43,7 +43,7 @@ class Ui_MainWindow(object):
         self.scrollArea.setWidgetResizable(True)
         self.scrollAreaWidgetContents = QWidget()
         self.scrollAreaWidgetContents.setObjectName(u"scrollAreaWidgetContents")
-        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 578, 448))
+        self.scrollAreaWidgetContents.setGeometry(QRect(0, 0, 280, 310))
         self.horizontalLayout_4 = QHBoxLayout(self.scrollAreaWidgetContents)
         self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
         self.img_preview = QLabel(self.scrollAreaWidgetContents)
@@ -144,11 +144,13 @@ class Ui_MainWindow(object):
 
         self.lst_file_list = QListView(self.groupBox1)
         self.lst_file_list.setObjectName(u"lst_file_list")
-        sizePolicy5 = QSizePolicy(QSizePolicy.Maximum, QSizePolicy.Maximum)
+        sizePolicy5 = QSizePolicy(QSizePolicy.Maximum, QSizePolicy.MinimumExpanding)
         sizePolicy5.setHorizontalStretch(0)
         sizePolicy5.setVerticalStretch(0)
         sizePolicy5.setHeightForWidth(self.lst_file_list.sizePolicy().hasHeightForWidth())
         self.lst_file_list.setSizePolicy(sizePolicy5)
+        self.lst_file_list.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.lst_file_list.setMovement(QListView.Snap)
 
         self.gridLayout_2.addWidget(self.lst_file_list, 0, 0, 1, 4)
 
@@ -203,7 +205,7 @@ class Ui_MainWindow(object):
 
         self.formLayout.setWidget(9, QFormLayout.SpanningRole, self.widget_3)
 
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        self.verticalSpacer = QSpacerItem(40, 64, QSizePolicy.Minimum, QSizePolicy.Preferred)
 
         self.formLayout.setItem(6, QFormLayout.LabelRole, self.verticalSpacer)
 
@@ -241,7 +243,7 @@ class Ui_MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QMenuBar(MainWindow)
         self.menubar.setObjectName(u"menubar")
-        self.menubar.setGeometry(QRect(0, 0, 960, 21))
+        self.menubar.setGeometry(QRect(0, 0, 636, 21))
         MainWindow.setMenuBar(self.menubar)
         self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName(u"statusbar")

@@ -11,7 +11,7 @@ from PIL.ImageQt import ImageQt
 import configparser
 import tempfile
 
-THUMBNAIL_SIZE = 128
+THUMBNAIL_SIZE = 32
 CONFIG_FILE_PATH = 'config.ini'
 
 
@@ -42,6 +42,7 @@ class ImageSorterModel(QtCore.QAbstractListModel):
             raise ValueError("You done goofed")
         self.imageList.append(item)
         self.imageCount += 1
+        self.layoutChanged.emit()
 
     def move_up(self, item):
         self.layoutAboutToBeChanged.emit()
@@ -76,13 +77,16 @@ class ImageThumbItem(object):
         self.full_name = fulll_name
         self.thumbnail = thumbnail
 
-        if not os.path.exists("__cache"):
-            os.mkdir("__cache")
-        thumbnail.save(f"__cache/{self.display_name}")
-        self.q_thumb = QtGui.QIcon(f"__cache/{self.display_name}")
+        #if not os.path.exists("__cache"):
+        #    os.mkdir("__cache")
+        #thumbnail.save(f"__cache/{self.display_name}")
+        #self.q_thumb = QtGui.QIcon(f"__cache/{self.display_name}")
+
+        self.q_thumb = self.thumbnail.toqpixmap()
 
     def get_thumbnail(self):
         return self.q_thumb
+        #return self.q_thumb
 
 
 def smart_crop_image(image_handle):
@@ -171,17 +175,66 @@ class MainWindow(QtWidgets.QMainWindow):
         super(MainWindow, self).__init__(parent, flags)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        model = ImageSorterModel(self)
-        i_to_a = [
-            create_thumb_item(r'sample.png', size=THUMBNAIL_SIZE)
-        ]
+        self.model = ImageSorterModel(self)
+        test = self._open_image(r'sample.png')
+        i_to_a = []
+        if test is not None:
+            i_to_a.append(test)
         self.i_to_a = i_to_a
         self.ui.btn_preview.clicked.connect(self.btn_preview_clicked)
+        self.ui.btn_export.clicked.connect(self.btn_export_clicked)
         for i in i_to_a:
-            model.add_item(i)
-        self.boop = False
-        self.ui.lst_file_list.setModel(model)
+            self.model.add_item(i)
+        self.ui.lst_file_list.setModel(self.model)
         self.ui.lst_file_list.setViewMode(QtWidgets.QListView.ViewMode.ListMode)
+
+        self.ui.btn_img_add.clicked.connect(self.btn_img_add_clicked)
+        self.ui.btn_img_remove.clicked.connect(self.btn_img_remove_clicked)
+        self.ui.btn_img_move_up.clicked.connect(self.btn_img_move_up_clicked)
+        self.ui.btn_img_move_down.clicked.connect(self.btn_img_move_down_clicked)
+        self.ui.btn_save_as_browse.clicked.connect(self.btn_save_as_browse_clicked)
+
+    def btn_save_as_browse_clicked(self):
+        open_dialog = QtWidgets.QFileDialog(self, "Save Image")
+        open_dialog.setAcceptMode(open_dialog.AcceptSave)
+        open_dialog.setFileMode(open_dialog.AnyFile)
+        open_dialog.setConfirmOverwrite(False)
+        open_dialog.setNameFilter("Images (*.png *.jpg *.jpeg *.tiff *tif *.bmp *.gif );;All Files (*)")
+        open_dialog.open()
+        if open_dialog.exec_():
+            file_name = open_dialog.selectedFiles()[0] if open_dialog.selectedFiles() is not None else ""
+            self.ui.txt_save_as_path.setText(file_name)
+
+    def btn_img_add_clicked(self):
+        open_dialog = QtWidgets.QFileDialog(self, "Open Image")
+        open_dialog.setFileMode(open_dialog.ExistingFiles)
+        open_dialog.setNameFilter("Images (*.png *.jpg *.jpeg *.tiff *tif *.bmp *.gif );;All Files (*)")
+        open_dialog.open()
+        if open_dialog.exec_():
+            file_names = open_dialog.selectedFiles()
+            for f in file_names:
+                img = self._open_image(f)
+                if img is not None:
+                    self.model.add_item(img)
+        pass
+
+    def btn_img_remove_clicked(self):
+        pass
+
+    def btn_img_move_up_clicked(self):
+        pass
+
+    def btn_img_move_down_clicked(self):
+        pass
+
+    def _open_image(self, image):
+        try:
+            return create_thumb_item(image, size=THUMBNAIL_SIZE)
+        except FileNotFoundError as exp:
+            QtWidgets.QMessageBox.warning(self, "Warning", f"Could not open {image}")
+        except Exception as exp:
+            QtWidgets.QMessageBox.warning(self, "Warning", f"Could not open {image}")
+
 
     def _get_selected_alignment(self):
         if self.ui.opt_align_left.isChecked():
@@ -198,17 +251,43 @@ class MainWindow(QtWidgets.QMainWindow):
             return 'vertical'
 
     def btn_preview_clicked(self):
-        beefull = create_composite_image(self.i_to_a,
-                                         orientation=self._get_selected_orientation(),
-                                         alignment=self._get_selected_alignment())
-        beacon = beefull.reduce(2)
-        #beacon.save("__cache/sample.jpg", "jpeg")
+        if self.model.rowCount() > 0:
+            self.beefull = create_composite_image(self.model.imageList,
+                                             orientation=self._get_selected_orientation(),
+                                             alignment=self._get_selected_alignment())
+            beacon = self.beefull.reduce(2)
+            tester = ImageQt(beacon)
+            self.ui.img_preview.setPixmap(beacon.toqpixmap())
+        else:
+            QtWidgets.QMessageBox.information(self, "Information",
+                                              "You must add at least 1 image to the composition before you can preview.")
 
-        #tester = QtGui.QPixmap(QtGui.QImage("__cache/sample.jpg"))
-        tester = ImageQt(beacon)
+    def _save_image(self, export_path):
+        try:
+            with open(export_path, 'wb') as file_handle:
+                self.beefull.save(file_handle)
+        except Exception as exp:
+            QtWidgets.QMessageBox.critical(self, "Error",
+                                           f'Failed to export the image.\nMessage:f{exp.with_traceback()}')
 
-        self.ui.img_preview.setPixmap(beacon.toqpixmap())
-        self.boop = not self.boop
+    def btn_export_clicked(self):
+        if self.model.rowCount() > 0:
+            print("exporting")
+            export_path = os.path.abspath(self.ui.txt_save_as_path.text().strip())
+            if os.path.exists(export_path) and os.path.isfile(export_path):
+                ans = QtWidgets.QMessageBox.question(self, "Overwrite?",
+                                                     f'The file "{export_path}" already exists. Do you want to replace it?',
+                                                     defaultButton=QtWidgets.QMessageBox.No)
+                if ans == QtWidgets.QMessageBox.Yes:
+                    self._save_image(export_path)
+
+            elif os.path.exists(export_path):
+                print("TODO: Some path magic")
+            else:
+                self._save_image(export_path)
+        else:
+            QtWidgets.QMessageBox.information(self, "Information",
+                                              "You must add at least 1 image to the composition before you can export.")
 
 # Signals must inherit QObject
 class ProgressSignals(QObject):
