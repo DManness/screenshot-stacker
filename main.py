@@ -3,207 +3,91 @@
 import os
 import sys
 import requests
+from PIL.ImageQt import ImageQt
 from PySide2 import QtWidgets, QtGui, QtCore
 from PySide2.QtCore import Qt, QTranslator, Signal, QObject, QThread, QThreadPool
 from gui_mainwindow import Ui_MainWindow
-from PIL import Image
-from PIL.ImageQt import ImageQt
 import configparser
 import tempfile
+from Model.ImageSorterModel import ImageSorterModel
+import Controller
+import logging
+import argparse
+import glob
+
+import time
 
 THUMBNAIL_SIZE = 32
 CONFIG_FILE_PATH = 'config.ini'
 STR_FILE_DIALOG_FILTER = 'Images (*.jpg *.jpeg *.jfif *.png *.tiff *tif *.bmp *.gif );;All Files (*)'
 
-class ImageSorterModel(QtCore.QAbstractListModel):
-    def __init__(self, parent=None):
-        super(ImageSorterModel, self).__init__(parent)
-        self.imageCount = 0
-        self.imageList = []
-
-    def rowCount(self, parent=QtCore.QModelIndex()):
-        return len(self.imageList)
-
-    def data(self, index, role=QtCore.Qt.DisplayRole):
-        if not index.isValid():
-            return None
-        if index.row() >= len(self.imageList) or index.row() < 0:
-            return None
-        if role == QtCore.Qt.DisplayRole:
-            return self.imageList[index.row()].display_name
-        if role == QtCore.Qt.ItemDataRole:
-            return self.imageList[index.row()]
-        if role == QtCore.Qt.DecorationRole:
-            return self.imageList[index.row()].get_thumbnail()
-        return None
-
-    def add_item(self, item):
-        if not isinstance(item, ImageThumbItem):
-            raise ValueError("You done goofed")
-        self.imageList.append(item)
-        self.imageCount += 1
-        self.layoutChanged.emit()
-
-    def move_up(self, position):
-        self.layoutAboutToBeChanged.emit()
-        self._swap_elements(position, position-1)
-        #self.changePersistentIndexList(position-1, position)
-        self.layoutChanged.emit()
-
-    def move_down(self, position):
-        self.layoutAboutToBeChanged.emit()
-        self._swap_elements(position ,position+1 )
-        #self.changePersistentIndexList(position-1, position)
-        self.layoutChanged.emit()
-
-    def insertRows(self, position, rows, index=QtCore.QModelIndex()):
-        self.beginInsertRows(index, position, position + rows - 1)
-
-        for row in range(0,rows):
-            self.imageList.insert(position, self.add_item(row))
-
-        self.endInsertRows()
-        return True
-
-    def removeRows(self, position, rows, index=QtCore.QModelIndex()):
-        self.beginRemoveRows(index, position, position + rows - 1)
-
-        for row in range(0, rows):
-            del self.imageList[position]
-
-        self.endRemoveRows()
-        return True
-        pass
-
-    def _swap_elements(self, i_1, i_2):
-        temp = self.imageList[i_1]
-        self.imageList[i_1] = self.imageList[i_2]
-        self.imageList[i_2] = temp
-
-class ImageThumbItem(object):
-
-    def __init__(self, display_name, fulll_name, thumbnail):
-        self.display_name = display_name
-        self.full_name = fulll_name
-        self.thumbnail = thumbnail
-
-        #if not os.path.exists("__cache"):
-        #    os.mkdir("__cache")
-        #thumbnail.save(f"__cache/{self.display_name}")
-        #self.q_thumb = QtGui.QIcon(f"__cache/{self.display_name}")
-
-        self.q_thumb = self.thumbnail.toqpixmap()
-
-    def get_thumbnail(self):
-        return self.q_thumb
-        #return self.q_thumb
-
-
-def smart_crop_image(image_handle):
-    width, height = image_handle.size
-    if height > width:
-        adjust = int((height - width) / 2)
-        box = (0, adjust, width, height - adjust)
-    else:
-        adjust = int((width - height) / 2)
-        box = (adjust, 0, width - adjust, height)
-
-    return image_handle.crop(box)
-
-
-def create_thumbnail(image_path, size=64):
-    image = open(image_path, 'rb')
-    thumb = smart_crop_image(Image.open(image))
-
-    thumb.thumbnail((size, size))
-    image.close()
-    return thumb
-
-
-def create_thumb_item(image_path, size=64):
-    full_path = os.path.abspath(image_path)
-    base_name = os.path.basename(full_path)
-    thumb = create_thumbnail(full_path, size=size)
-    return ImageThumbItem(base_name, full_path, thumb)
-
-
-def create_composite_image(image_array, orientation='vertical', alignment='left'):
-    is_vert = orientation == 'vertical'
-    out_size_v = 0
-    out_size_h = 0
-    largest_width = 0
-    largest_height = 0
-    # This first round discovers information about each file provided.
-    for img in image_array:
-        with open(img.full_name, 'rb') as file_pointer:
-            img_handle = Image.open( file_pointer )
-            out_size_v += img_handle.height
-            out_size_h += img_handle.width
-            largest_width = max(largest_width, img_handle.width )
-            largest_height = max(largest_height, img_handle.height )
-
-    if is_vert:
-        out_image = Image.new('RGB', (largest_width, out_size_v) )
-    else:
-        out_image = Image.new('RGB', (out_size_h, largest_height))
-    img_cursor = 0
-    for img in image_array:
-        with open(img.full_name, 'rb') as file_pointer:
-            img_handle = Image.open(file_pointer).convert('RGB')
-
-            if is_vert:
-                if alignment == 'left':
-                    x_offset = 0
-                elif alignment == 'right':
-                    x_offset = largest_width - img_handle.width
-                else:
-                    x_offset = int((largest_width - img_handle.width) / 2)
-
-                out_image.paste(img_handle, box=(x_offset, img_cursor,
-                                                 img_handle.width + x_offset, img_handle.height + img_cursor))
-                img_cursor += img_handle.height
-            else:
-
-                if alignment == 'left':
-                    y_offset = 0
-                elif alignment == 'right':
-                    y_offset = largest_height - img_handle.height
-                else:
-                    y_offset = int((largest_height - img_handle.height) / 2)
-
-                out_image.paste(img_handle, box=(img_cursor, y_offset,
-                                                 img_handle.width + img_cursor, img_handle.height + y_offset))
-                img_cursor += img_handle.width
-    return out_image
-
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, parent=None, flags=Qt.WindowFlags()):
+    """
+    Main Screenshot Stacker application class wrapper. Hosts the controller class that interacts
+    with the presentation class.
+    """
+
+    def __init__(self, parent=None, flags=Qt.WindowFlags(), open_files=[], verbose=False, **kwargs):
+        """
+        Construct a new Main Application Window.
+        :param parent: the QObject that owns this item.
+        :param flags: The window flags to be applied.
+        """
         super(MainWindow, self).__init__(parent, flags)
+        self.logger = logging.getLogger(__name__)
+        logging.basicConfig()
+        self.logger.setLevel(logging.DEBUG if verbose else logging.WARN)
+
+        self.logger.debug("Building UI")
+
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+
         self.model = ImageSorterModel(self)
         self.ui.btn_preview.clicked.connect(self.btn_preview_clicked)
         self.ui.btn_export.clicked.connect(self.btn_export_clicked)
+        self.ui.btn_save_as_browse.clicked.connect(self.btn_save_as_browse_clicked)
+
         self.ui.lst_file_list.setModel(self.model)
         self.ui.lst_file_list.setViewMode(QtWidgets.QListView.ViewMode.ListMode)
 
+        # Buttons on the composition thumbnail list.
         self.ui.btn_img_add.clicked.connect(self.btn_img_add_clicked)
         self.ui.btn_img_remove.clicked.connect(self.btn_img_remove_clicked)
         self.ui.btn_img_move_up.clicked.connect(self.btn_img_move_up_clicked)
         self.ui.btn_img_move_down.clicked.connect(self.btn_img_move_down_clicked)
-        self.ui.btn_save_as_browse.clicked.connect(self.btn_save_as_browse_clicked)
 
         self.ui.opt_orientation_horizontal.toggled.connect(self.opt_orientation_check_changed)
-        beeper = ['sample.png']
-        for b in beeper:
-            self.model.add_item(create_thumb_item(b, THUMBNAIL_SIZE))
+
+        for file_path in open_files:
+            self.model.add_item(self._open_image(file_path))
+
+        self._set_alignment(kwargs.get('alignment'))
+        self._set_orientation(kwargs.get('orientation'))
+        kwargs.get('output_path')
+
+    def _set_orientation(self, orientation):
+        if orientation == 'horizontal':
+            self.ui.opt_orientation_horizontal.setChecked(True)
+        else:
+            self.ui.opt_orientation_vertical.setChecked(True)
+
+    def _set_alignment(self, alignment):
+        if alignment == 'center':
+            self.ui.opt_align_center.setChecked(True)
+        elif alignment == 'right':
+            self.ui.opt_align_right.setChecked(True)
+        else:
+            self.ui.opt_align_left.setChecked(True)
 
     def opt_orientation_check_changed(self):
+        """
+        Changes the UI text on the alignment options to be more relevant to the selected orientation.
+        :return: None
+        """
         if self.ui.opt_orientation_horizontal.isChecked():
             self.ui.opt_align_left.setText(self.tr('Top'))
-            self.ui.opt_align_center.setText(self.tr('Middle'))
-            self.ui.opt_align_center.setText(self.tr('Middle'))
             self.ui.opt_align_center.setText(self.tr('Middle'))
             self.ui.opt_align_right.setText(self.tr('Bottom'))
         else:
@@ -212,6 +96,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.opt_align_right.setText(self.tr('Right'))
 
     def btn_save_as_browse_clicked(self):
+        """
+        Prompts the user to select a path to save the composition.
+        :return: None
+        """
         open_dialog = QtWidgets.QFileDialog(self, "Save Image")
         open_dialog.setAcceptMode(open_dialog.AcceptSave)
         open_dialog.setFileMode(open_dialog.AnyFile)
@@ -223,6 +111,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self.ui.txt_save_as_path.setText(file_name)
 
     def btn_img_add_clicked(self):
+        """
+        Prompts the user to select one or more images to add to the model.
+        :return: None
+        """
         open_dialog = QtWidgets.QFileDialog(self, self.tr("Open Image"))
         open_dialog.setFileMode(open_dialog.ExistingFiles)
         open_dialog.setNameFilter(self.tr(STR_FILE_DIALOG_FILTER))
@@ -230,18 +122,24 @@ class MainWindow(QtWidgets.QMainWindow):
         if open_dialog.exec_():
             file_names = open_dialog.selectedFiles()
             print(file_names)
+            self._set_wait_cursor(True)
             for f in file_names:
                 img = self._open_image(f)
                 if img is not None:
                     self.model.add_item(img)
+            self._set_wait_cursor(False)
         pass
 
     def btn_img_remove_clicked(self):
         if self.model.rowCount() > 0:
-            cur_index = self.ui.lst_file_list.currentIndex
+            cur_index = self.ui.lst_file_list.currentIndex()
             self.model.removeRows(cur_index.row(), 1)
 
     def btn_img_move_up_clicked(self):
+        """
+        Swaps the currently selected thumbnail with the previous item in the model, moving it up the list.
+        :return: None
+        """
         if self.model.rowCount() > 0:
             cur_index = self.ui.lst_file_list.currentIndex()
             if cur_index.row() > 0:
@@ -249,10 +147,13 @@ class MainWindow(QtWidgets.QMainWindow):
                 new_index = self.model.createIndex(cur_index.row() - 1, cur_index.row())
                 self.ui.lst_file_list.setCurrentIndex(new_index)
 
-
         pass
 
     def btn_img_move_down_clicked(self):
+        """
+        Swaps the currently selected thumbnail with the next item in the model, moving it down the list.
+        :return: None
+        """
         if self.model.rowCount() > 0:
             cur_index = self.ui.lst_file_list.currentIndex()
             if cur_index.row() < self.model.rowCount() - 1:
@@ -263,15 +164,28 @@ class MainWindow(QtWidgets.QMainWindow):
         pass
 
     def _open_image(self, image):
+        """
+        Tries to open an image for building the composition.
+        :param image: The absolute path to the image to be opened.
+        :returns:
+            - Model.ImageThumbItem - A model class that stores the path, name, and thumbnail for the image.
+            - None - If a particular image could not be opened.
+        """
         try:
-            return create_thumb_item(image, size=THUMBNAIL_SIZE)
+            return Controller.create_thumb_item(image, size=THUMBNAIL_SIZE)
         except FileNotFoundError as exp:
-            QtWidgets.QMessageBox.warning(self, "Warning", f"Could not open {image}")
+            QtWidgets.QMessageBox.warning(self, 'Warning', f'Could not open {image}')
+            self.logger.warning(f'FAILED OPEN IMAGE \n{exp.with_traceback()}')
         except Exception as exp:
-            QtWidgets.QMessageBox.warning(self, "Warning", f"Could not open {image}")
-
+            QtWidgets.QMessageBox.warning(self, "Warning", f'Could not open {image}')
+            self.logger.warning(f'FAILED OPEN IMAGE \n{exp.with_traceback()}')
 
     def _get_selected_alignment(self):
+        """
+        Get a flag literal for the alignment option depending on which item is currently selected.
+        TODO: Replace the string literal with an enumeration or an int flag.
+        :return: str either 'left', 'right' or 'center' - Note: these options apply regardless of the orientation.
+        """
         if self.ui.opt_align_left.isChecked():
             return 'left'
         elif self.ui.opt_align_right.isChecked():
@@ -280,49 +194,88 @@ class MainWindow(QtWidgets.QMainWindow):
             return 'center'
 
     def _get_selected_orientation(self):
+        """
+        Get a flag literal for the orientation option depending on which item is currently selected.
+        TODO: Replace the string literal with an enumeration or an int flag.
+        :return: str either 'horizontal' or 'vertical'
+        """
         if self.ui.opt_orientation_horizontal.isChecked():
             return 'horizontal'
         else:
             return 'vertical'
 
     def btn_preview_clicked(self):
+        """
+        Generates a preview image.
+        :return: None
+        """
+        self._set_wait_cursor(True)
         if self.model.rowCount() > 0:
-            self.beefull = create_composite_image(self.model.imageList,
-                                             orientation=self._get_selected_orientation(),
-                                             alignment=self._get_selected_alignment())
+            self.logger.debug('Creating full size composition and storing in memory.')
+            self.beefull = Controller.create_composite_image(self.model.imageList,
+                                                  orientation=self._get_selected_orientation(),
+                                                  alignment=self._get_selected_alignment())
+            self.logger.debug('Creating preview sized image and storing in memory.')
             beacon = self.beefull.reduce(2)
-            tester = ImageQt(beacon)
             self.ui.img_preview.setPixmap(beacon.toqpixmap())
         else:
+            self.logger.debug('No images in composition.')
             QtWidgets.QMessageBox.information(self, "Information",
                                               "You must add at least 1 image to the composition before you can preview.")
+        self._set_wait_cursor(False)
 
     def _save_image(self, export_path):
+        """
+        Logic to save the composition as an image.
+        :param export_path: The absolute path to export the image.
+        :return: None
+        """
+        self.logger.debug(f'Saving as "{export_path}".')
         try:
             with open(export_path, 'wb') as file_handle:
                 self.beefull.save(file_handle)
+            self.logger.debug('File has been exported to disk.')
         except Exception as exp:
+            self.logger.error(f"Failed to export image.\n{exp.with_traceback()}")
             QtWidgets.QMessageBox.critical(self, "Error",
                                            f'Failed to export the image.\nMessage:f{exp.with_traceback()}')
 
+    def _set_wait_cursor(self, should_show_wait=True):
+        """
+        Private function that toggles the wait cursor for the application on or off.
+        :param should_show_wait: True to display a wait cursor, False to display an arrow cursor.
+        :return: None
+        """
+        self.ui.centralwidget.setCursor(
+            QtGui.Qt.WaitCursor if should_show_wait else QtGui.Qt.ArrowCursor)
+
     def btn_export_clicked(self):
+        """
+        Handles the logic of exporting the image, prompting the user when input is needed.
+        :return: None
+        """
         if self.model.rowCount() > 0:
-            print("exporting")
+            self.logger.debug("Starting export.")
             export_path = os.path.abspath(self.ui.txt_save_as_path.text().strip())
             if os.path.exists(export_path) and os.path.isfile(export_path):
+                self.logger.debug("File already exists. Prompt for overwrite.")
                 ans = QtWidgets.QMessageBox.question(self, "Overwrite?",
                                                      f'The file "{export_path}" already exists. Do you want to replace it?',
                                                      defaultButton=QtWidgets.QMessageBox.No)
+                self.logger.debug(f"User chose {ans.__str__()}.")
                 if ans == QtWidgets.QMessageBox.Yes:
                     self._save_image(export_path)
 
             elif os.path.exists(export_path):
+                self.logger.debug("User provided a directory. Using {TODO} as the file name.")
                 print("TODO: Some path magic")
             else:
                 self._save_image(export_path)
         else:
+            self.logger.debug("Nothing to do. No images in composition.")
             QtWidgets.QMessageBox.information(self, "Information",
                                               "You must add at least 1 image to the composition before you can export.")
+
 
 # Signals must inherit QObject
 class ProgressSignals(QObject):
@@ -356,25 +309,86 @@ def write_default_config():
         'log_level': 'info',
         'background_color': "000"
     }
-    with open (CONFIG_FILE_PATH, 'w') as cfgfile:
+    with open(CONFIG_FILE_PATH, 'w') as cfgfile:
         config.write(cfgfile)
+
+def in_str(string, value):
+    try:
+        string.index(value)
+        return True
+    except ValueError:
+        return False
+
+def configure_args():
+    arg_parser.add_argument('-i', '--interactive', help='Open the GUI to load the existing images.', action='store_true')
+    arg_parser.add_argument('-s', '--show', help='Opens the composition in the system viewer instead of saving to a file.', action='store_true')
+    #arg_parser.add_argument('-l', '--log', help='Write logs to file (default is stdout, stderr)')
+    #arg_parser.add_argument('-L', '--log_level', help='Sets the program\'s log level', action='store_true')
+    arg_parser.add_argument('-v',  '--verbose', help='Increase the amount of console output.', action='store_true')
+    arg_parser.add_argument('files', help='The path to one or more image files to be loaded.', nargs='*')
+    arg_parser.add_argument('-a', '--alignment', default='left', help="(T)op, (M)iddle, (B)ottom, (L)eft, (C)enter, (R)ight")
+    arg_parser.add_argument('-d', '--orientation', default='vertical', help="(H)orizontal or (V)ertical" )
+    arg_parser.add_argument('-o', '--output', help="Output to the specified file.")
+
+
+def parse_arg_alignment(raw_arg):
+    DEFAULT = 'center'
+    raw_arg = raw_arg.strip().lower()
+    if len(raw_arg) > 0:
+        a_letter = raw_arg[0]
+    else:
+        a_letter = DEFAULT[0]
+
+    if a_letter == 'l' or a_letter == 't':
+        alignment = 'left'
+    elif a_letter == 'c' or a_letter == 'm':
+        alignment = 'center'
+    elif a_letter == 'r' or a_letter == 'b':
+        alignment = 'right'
+    return alignment
+
+    pass
+def parse_arg_orientation(raw_arg):
+    raw_arg = raw_arg.strip().lower()
+    if len(raw_arg) > 0 and raw_arg[0] == 'h':
+        return 'horizontal'
+    else:
+        return 'vertical'
+
+def parse_arg_outpath(raw_arg):
+    return os.path.join(os.path.curdir, f'{int(time.time())}.png')
 
 
 if __name__ == '__main__':
-    if not os.path.exists(CONFIG_FILE_PATH):
-        write_default_config()
-    config = configparser.ConfigParser()
-    config.read(CONFIG_FILE_PATH)
+    arg_parser = argparse.ArgumentParser()
+    configure_args()
+    args = arg_parser.parse_args()
+    if len([i for i in args.files if in_str(i, '*') ]) > 0:
+        print('Globbing ("*") is not currently supported. Please use exact paths only.')
+        #exit()
+    #
+    # if not os.path.exists(CONFIG_FILE_PATH):
+    #     write_default_config()
+    # config = configparser.ConfigParser()
+    # config.read(CONFIG_FILE_PATH)
 
-    #translator = QTranslator()
-    #translator.load('i18n/fr_ca')
+    # translator = QTranslator()
+    # translator.load('i18n/fr_ca')
+    extra_options = {
+        'orientation': parse_arg_orientation(args.orientation),
+        'alignment': parse_arg_alignment(args.alignment),
+        'output_path': parse_arg_outpath(args.output),
+        'verbose': args.verbose,
+    }
+
     app = QtWidgets.QApplication(sys.argv)
 
-    #QtWidgets.QStyleFactory.keys()
-    app.setStyle(config['DEFAULT']['style'])
-    #app.installTranslator(translator)
+    # QtWidgets.QStyleFactory.keys()
+    #app.setStyle(config['DEFAULT']['style'])
+    # app.installTranslator(translator)
 
-    window = MainWindow()
+    window = MainWindow(open_files=args.files, **extra_options)
+
     window.show()
 
     sys.exit(app.exec_())
