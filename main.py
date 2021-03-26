@@ -212,12 +212,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._set_wait_cursor(True)
         if self.model.rowCount() > 0:
             self.logger.debug('Creating full size composition and storing in memory.')
-            self.beefull = Controller.create_composite_image(self.model.imageList,
+            self.full_composite_image = Controller.create_composite_image(self.model.imageList,
                                                   orientation=self._get_selected_orientation(),
                                                   alignment=self._get_selected_alignment())
             self.logger.debug('Creating preview sized image and storing in memory.')
-            beacon = self.beefull.reduce(2)
-            self.ui.img_preview.setPixmap(beacon.toqpixmap())
+            preview_sized_image = self.full_composite_image.reduce(2)
+            self.ui.img_preview.setPixmap(preview_sized_image.toqpixmap())
         else:
             self.logger.debug('No images in composition.')
             QtWidgets.QMessageBox.information(self, "Information",
@@ -233,7 +233,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.logger.debug(f'Saving as "{export_path}".')
         try:
             with open(export_path, 'wb') as file_handle:
-                self.beefull.save(file_handle)
+                self.full_composite_image.save(file_handle)
             self.logger.debug('File has been exported to disk.')
         except Exception as exp:
             self.logger.error(f"Failed to export image.\n{exp.with_traceback()}")
