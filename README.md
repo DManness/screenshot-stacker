@@ -24,3 +24,7 @@ This script was built for Python 3.7 and tested with Python 3.9. Using a virtual
 3. Click `Refresh` to generate a preview **You must click this button before you export your composition.**
 4. Enter a path in which to export your composition.
 5. Click `Refresh` one more time, then `Export`.
+
+## Screenshots
+
+![Main Application Window with 2 images added](https://i.imgur.com/tiVV2uX.png)
