@@ -6,7 +6,7 @@ import requests
 from PIL.ImageQt import ImageQt
 from PySide2 import QtWidgets, QtGui, QtCore
 from PySide2.QtCore import Qt, QTranslator, Signal, QObject, QThread, QThreadPool
-from gui_mainwindow import Ui_MainWindow
+from Presentation.gui_mainwindow import Ui_MainWindow
 import configparser
 import tempfile
 from Model.ImageSorterModel import ImageSorterModel
@@ -364,7 +364,7 @@ if __name__ == '__main__':
     configure_args()
     args = arg_parser.parse_args()
     if len([i for i in args.files if in_str(i, '*') ]) > 0:
-        print('Globbing ("*") is not currently supported. Please use exact paths only.')
+        print('Globbing ("*") is not supported. Please use exact paths only.')
         #exit()
     #
     # if not os.path.exists(CONFIG_FILE_PATH):
